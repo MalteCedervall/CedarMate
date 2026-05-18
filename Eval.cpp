@@ -1,7 +1,5 @@
 #include "Eval.h"
 
-static const int pieceVal[] = {0, 100, 300, 300, 500, 900, 0, 100, 300, 300, 500, 900, 0};
-
 // Piece-Square Tables for white. Mirror vertically (63-i) for black.
 // Square 0 = a1 (white back rank), 63 = h8 (black back rank).
 static const int knightPST[64] = {
@@ -73,73 +71,15 @@ int evaluate(const Board& board) {
                 break;
             case W_KNIGHT: score += 300;
                 score += knightPST[i];
-                if (i % 8 != 0 && i + 15 < 64  && board.getPiece(i + 15) >= B_PAWN) score += pieceVal[board.getPiece(i + 15)] / 4;
-                if (i % 8 != 7 && i + 17 < 64  && board.getPiece(i + 17) >= B_PAWN) score += pieceVal[board.getPiece(i + 17)] / 4;
-                if (i % 8 >= 2 && i + 6  < 64  && board.getPiece(i + 6)  >= B_PAWN) score += pieceVal[board.getPiece(i + 6)]  / 4;
-                if (i % 8 <= 5 && i + 10 < 64  && board.getPiece(i + 10) >= B_PAWN) score += pieceVal[board.getPiece(i + 10)] / 4;
-                if (i % 8 != 7 && i >= 15      && board.getPiece(i - 15) >= B_PAWN) score += pieceVal[board.getPiece(i - 15)] / 4;
-                if (i % 8 != 0 && i >= 17      && board.getPiece(i - 17) >= B_PAWN) score += pieceVal[board.getPiece(i - 17)] / 4;
-                if (i % 8 <= 5 && i >= 6       && board.getPiece(i - 6)  >= B_PAWN) score += pieceVal[board.getPiece(i - 6)]  / 4;
-                if (i % 8 >= 2 && i >= 10      && board.getPiece(i - 10) >= B_PAWN) score += pieceVal[board.getPiece(i - 10)] / 4;
                 break;
             case W_BISHOP: score += 300;
-                score += bishopPST[i]; {
-                uint8_t n = i;
-                while (n % 8 != 0 && n + 7 < 64 && board.getPiece(n + 7) == EMPTY) { n += 7; }
-                if (n % 8 != 0    && n + 7 < 64 && board.getPiece(n + 7) >= B_PAWN) score += pieceVal[board.getPiece(n + 7)] / 4;
-                n = i;
-                while (n % 8 != 7 && n + 9 < 64 && board.getPiece(n + 9) == EMPTY) { n += 9; }
-                if (n % 8 != 7    && n + 9 < 64 && board.getPiece(n + 9) >= B_PAWN) score += pieceVal[board.getPiece(n + 9)] / 4;
-                n = i;
-                while (n % 8 != 0 && n >= 9     && board.getPiece(n - 9) == EMPTY) { n -= 9; }
-                if (n % 8 != 0    && n >= 9     && board.getPiece(n - 9) >= B_PAWN) score += pieceVal[board.getPiece(n - 9)] / 4;
-                n = i;
-                while (n % 8 != 7 && n >= 7     && board.getPiece(n - 7) == EMPTY) { n -= 7; }
-                if (n % 8 != 7    && n >= 7     && board.getPiece(n - 7) >= B_PAWN) score += pieceVal[board.getPiece(n - 7)] / 4;
-                break; }
+                score += bishopPST[i];
+                break;
             case W_ROOK:   score += 500;
-                score += rookPST[i]; {
-                uint8_t n = i;
-                while (n + 8 < 64 && board.getPiece(n + 8) == EMPTY) { n += 8; }
-                if (n + 8 < 64    && board.getPiece(n + 8) >= B_PAWN) score += pieceVal[board.getPiece(n + 8)] / 4;
-                n = i;
-                while (n >= 8     && board.getPiece(n - 8) == EMPTY) { n -= 8; }
-                if (n >= 8        && board.getPiece(n - 8) >= B_PAWN) score += pieceVal[board.getPiece(n - 8)] / 4;
-                n = i;
-                while (n % 8 != 7 && board.getPiece(n + 1) == EMPTY) { n += 1; }
-                if (n % 8 != 7    && board.getPiece(n + 1) >= B_PAWN) score += pieceVal[board.getPiece(n + 1)] / 4;
-                n = i;
-                while (n % 8 != 0 && board.getPiece(n - 1) == EMPTY) { n -= 1; }
-                if (n % 8 != 0    && board.getPiece(n - 1) >= B_PAWN) score += pieceVal[board.getPiece(n - 1)] / 4;
-                break; }
-            case W_QUEEN:  score += 900; {
-                uint8_t n = i;
-                // rook rays
-                while (n + 8 < 64 && board.getPiece(n + 8) == EMPTY) { n += 8; }
-                if (n + 8 < 64    && board.getPiece(n + 8) >= B_PAWN) score += pieceVal[board.getPiece(n + 8)] / 4;
-                n = i;
-                while (n >= 8     && board.getPiece(n - 8) == EMPTY) { n -= 8; }
-                if (n >= 8        && board.getPiece(n - 8) >= B_PAWN) score += pieceVal[board.getPiece(n - 8)] / 4;
-                n = i;
-                while (n % 8 != 7 && board.getPiece(n + 1) == EMPTY) { n += 1; }
-                if (n % 8 != 7    && board.getPiece(n + 1) >= B_PAWN) score += pieceVal[board.getPiece(n + 1)] / 4;
-                n = i;
-                while (n % 8 != 0 && board.getPiece(n - 1) == EMPTY) { n -= 1; }
-                if (n % 8 != 0    && board.getPiece(n - 1) >= B_PAWN) score += pieceVal[board.getPiece(n - 1)] / 4;
-                n = i;
-                // bishop rays
-                while (n % 8 != 0 && n + 7 < 64 && board.getPiece(n + 7) == EMPTY) { n += 7; }
-                if (n % 8 != 0    && n + 7 < 64 && board.getPiece(n + 7) >= B_PAWN) score += pieceVal[board.getPiece(n + 7)] / 4;
-                n = i;
-                while (n % 8 != 7 && n + 9 < 64 && board.getPiece(n + 9) == EMPTY) { n += 9; }
-                if (n % 8 != 7    && n + 9 < 64 && board.getPiece(n + 9) >= B_PAWN) score += pieceVal[board.getPiece(n + 9)] / 4;
-                n = i;
-                while (n % 8 != 0 && n >= 9     && board.getPiece(n - 9) == EMPTY) { n -= 9; }
-                if (n % 8 != 0    && n >= 9     && board.getPiece(n - 9) >= B_PAWN) score += pieceVal[board.getPiece(n - 9)] / 4;
-                n = i;
-                while (n % 8 != 7 && n >= 7     && board.getPiece(n - 7) == EMPTY) { n -= 7; }
-                if (n % 8 != 7    && n >= 7     && board.getPiece(n - 7) >= B_PAWN) score += pieceVal[board.getPiece(n - 7)] / 4;
-                break; }
+                score += rookPST[i];
+                break;
+            case W_QUEEN:  score += 900;
+                break;
             case W_KING:
                 score += kingPST[i];
                 if (i + 8 < 64) {
@@ -153,73 +93,15 @@ int evaluate(const Board& board) {
                 break;
             case B_KNIGHT: score -= 300;
                 score -= knightPST[63 - i];
-                if (i % 8 != 0 && i + 15 < 64  && board.getPiece(i + 15) > 0 && board.getPiece(i + 15) < B_PAWN) score -= pieceVal[board.getPiece(i + 15)] / 4;
-                if (i % 8 != 7 && i + 17 < 64  && board.getPiece(i + 17) > 0 && board.getPiece(i + 17) < B_PAWN) score -= pieceVal[board.getPiece(i + 17)] / 4;
-                if (i % 8 >= 2 && i + 6  < 64  && board.getPiece(i + 6)  > 0 && board.getPiece(i + 6)  < B_PAWN) score -= pieceVal[board.getPiece(i + 6)]  / 4;
-                if (i % 8 <= 5 && i + 10 < 64  && board.getPiece(i + 10) > 0 && board.getPiece(i + 10) < B_PAWN) score -= pieceVal[board.getPiece(i + 10)] / 4;
-                if (i % 8 != 7 && i >= 15      && board.getPiece(i - 15) > 0 && board.getPiece(i - 15) < B_PAWN) score -= pieceVal[board.getPiece(i - 15)] / 4;
-                if (i % 8 != 0 && i >= 17      && board.getPiece(i - 17) > 0 && board.getPiece(i - 17) < B_PAWN) score -= pieceVal[board.getPiece(i - 17)] / 4;
-                if (i % 8 <= 5 && i >= 6       && board.getPiece(i - 6)  > 0 && board.getPiece(i - 6)  < B_PAWN) score -= pieceVal[board.getPiece(i - 6)]  / 4;
-                if (i % 8 >= 2 && i >= 10      && board.getPiece(i - 10) > 0 && board.getPiece(i - 10) < B_PAWN) score -= pieceVal[board.getPiece(i - 10)] / 4;
                 break;
             case B_BISHOP: score -= 300;
-                score -= bishopPST[63 - i]; {
-                uint8_t n = i;
-                while (n % 8 != 0 && n + 7 < 64 && board.getPiece(n + 7) == EMPTY) { n += 7; }
-                if (n % 8 != 0    && n + 7 < 64 && board.getPiece(n + 7) > 0 && board.getPiece(n + 7) < B_PAWN) score -= pieceVal[board.getPiece(n + 7)] / 4;
-                n = i;
-                while (n % 8 != 7 && n + 9 < 64 && board.getPiece(n + 9) == EMPTY) { n += 9; }
-                if (n % 8 != 7    && n + 9 < 64 && board.getPiece(n + 9) > 0 && board.getPiece(n + 9) < B_PAWN) score -= pieceVal[board.getPiece(n + 9)] / 4;
-                n = i;
-                while (n % 8 != 0 && n >= 9     && board.getPiece(n - 9) == EMPTY) { n -= 9; }
-                if (n % 8 != 0    && n >= 9     && board.getPiece(n - 9) > 0 && board.getPiece(n - 9) < B_PAWN) score -= pieceVal[board.getPiece(n - 9)] / 4;
-                n = i;
-                while (n % 8 != 7 && n >= 7     && board.getPiece(n - 7) == EMPTY) { n -= 7; }
-                if (n % 8 != 7    && n >= 7     && board.getPiece(n - 7) > 0 && board.getPiece(n - 7) < B_PAWN) score -= pieceVal[board.getPiece(n - 7)] / 4;
-                break; }
+                score -= bishopPST[63 - i];
+                break;
             case B_ROOK:   score -= 500;
-                score -= rookPST[63 - i]; {
-                uint8_t n = i;
-                while (n + 8 < 64 && board.getPiece(n + 8) == EMPTY) { n += 8; }
-                if (n + 8 < 64    && board.getPiece(n + 8) > 0 && board.getPiece(n + 8) < B_PAWN) score -= pieceVal[board.getPiece(n + 8)] / 4;
-                n = i;
-                while (n >= 8     && board.getPiece(n - 8) == EMPTY) { n -= 8; }
-                if (n >= 8        && board.getPiece(n - 8) > 0 && board.getPiece(n - 8) < B_PAWN) score -= pieceVal[board.getPiece(n - 8)] / 4;
-                n = i;
-                while (n % 8 != 7 && board.getPiece(n + 1) == EMPTY) { n += 1; }
-                if (n % 8 != 7    && board.getPiece(n + 1) > 0 && board.getPiece(n + 1) < B_PAWN) score -= pieceVal[board.getPiece(n + 1)] / 4;
-                n = i;
-                while (n % 8 != 0 && board.getPiece(n - 1) == EMPTY) { n -= 1; }
-                if (n % 8 != 0    && board.getPiece(n - 1) > 0 && board.getPiece(n - 1) < B_PAWN) score -= pieceVal[board.getPiece(n - 1)] / 4;
-                break; }
-            case B_QUEEN:  score -= 900; {
-                uint8_t n = i;
-                // rook rays
-                while (n + 8 < 64 && board.getPiece(n + 8) == EMPTY) { n += 8; }
-                if (n + 8 < 64    && board.getPiece(n + 8) > 0 && board.getPiece(n + 8) < B_PAWN) score -= pieceVal[board.getPiece(n + 8)] / 4;
-                n = i;
-                while (n >= 8     && board.getPiece(n - 8) == EMPTY) { n -= 8; }
-                if (n >= 8        && board.getPiece(n - 8) > 0 && board.getPiece(n - 8) < B_PAWN) score -= pieceVal[board.getPiece(n - 8)] / 4;
-                n = i;
-                while (n % 8 != 7 && board.getPiece(n + 1) == EMPTY) { n += 1; }
-                if (n % 8 != 7    && board.getPiece(n + 1) > 0 && board.getPiece(n + 1) < B_PAWN) score -= pieceVal[board.getPiece(n + 1)] / 4;
-                n = i;
-                while (n % 8 != 0 && board.getPiece(n - 1) == EMPTY) { n -= 1; }
-                if (n % 8 != 0    && board.getPiece(n - 1) > 0 && board.getPiece(n - 1) < B_PAWN) score -= pieceVal[board.getPiece(n - 1)] / 4;
-                n = i;
-                // bishop rays
-                while (n % 8 != 0 && n + 7 < 64 && board.getPiece(n + 7) == EMPTY) { n += 7; }
-                if (n % 8 != 0    && n + 7 < 64 && board.getPiece(n + 7) > 0 && board.getPiece(n + 7) < B_PAWN) score -= pieceVal[board.getPiece(n + 7)] / 4;
-                n = i;
-                while (n % 8 != 7 && n + 9 < 64 && board.getPiece(n + 9) == EMPTY) { n += 9; }
-                if (n % 8 != 7    && n + 9 < 64 && board.getPiece(n + 9) > 0 && board.getPiece(n + 9) < B_PAWN) score -= pieceVal[board.getPiece(n + 9)] / 4;
-                n = i;
-                while (n % 8 != 0 && n >= 9    && board.getPiece(n - 9) == EMPTY) { n -= 9; }
-                if (n % 8 != 0    && n >= 9    && board.getPiece(n - 9) > 0 && board.getPiece(n - 9) < B_PAWN) score -= pieceVal[board.getPiece(n - 9)] / 4;
-                n = i;
-                while (n % 8 != 7 && n >= 7    && board.getPiece(n - 7) == EMPTY) { n -= 7; }
-                if (n % 8 != 7    && n >= 7    && board.getPiece(n - 7) > 0 && board.getPiece(n - 7) < B_PAWN) score -= pieceVal[board.getPiece(n - 7)] / 4;
-                break; }
+                score -= rookPST[63 - i];
+                break;
+            case B_QUEEN:  score -= 900;
+                break;
             case B_KING:
                 score -= kingPST[63 - i];
                 if (i >= 8) {
