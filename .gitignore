@@ -1,0 +1,8 @@
+# Build output
+program
+test_moves
+*.o
+*.dSYM/
+
+# macOS
+.DS_Store

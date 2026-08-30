@@ -227,502 +227,202 @@ void Board::undoMove(const UndoInfo& undoInfo) {
 }
 
 
+namespace {
+
+// Piece values run white (1-6) then black (7-12), so one comparison splits them.
+inline bool isWhitePiece(Piece p) { return p != EMPTY && p < B_PAWN; }
+inline bool isBlackPiece(Piece p) { return p >= B_PAWN; }
+
+inline Color colorOf(Piece p) { return isBlackPiece(p) ? BLACK : WHITE; }
+
+inline bool isEnemy(Piece p, Color mover) {
+    return (mover == WHITE) ? isBlackPiece(p) : isWhitePiece(p);
+}
+
+// How many files apart two squares are. A step that "wraps" off the a- or
+// h-file lands on the far side of the board and shows up here as a big
+// distance, which is how every generator below rejects it.
+inline int fileDistance(int a, int b) {
+    int d = (a % 8) - (b % 8);
+    return (d < 0) ? -d : d;
+}
+
+// A pawn's diagonal step: on the board and exactly one file sideways.
+inline bool diagonalStep(uint8_t from, int delta, uint8_t& to) {
+    int t = from + delta;
+    if (t < 0 || t > 63) return false;
+    if (fileDistance(t, from) != 1) return false;
+    to = (uint8_t)t;
+    return true;
+}
+
+} // namespace
+
+
+void Board::generateStepMoves(uint8_t from, const int* deltas, int count,
+                              int maxFileShift, std::vector<Move>& moves) const {
+    for (int d = 0; d < count; d++) {
+        int to = from + deltas[d];
+        if (to < 0 || to > 63) continue;
+        if (fileDistance(to, from) > maxFileShift) continue;
+
+        Piece target = squares[to];
+        if (target == EMPTY || isEnemy(target, sideToMove))
+            moves.emplace_back(Move(from, (uint8_t)to, (uint8_t)target));
+    }
+}
+
+
+void Board::generateSlidingMoves(uint8_t from, const int* deltas, int count,
+                                 std::vector<Move>& moves) const {
+    for (int d = 0; d < count; d++) {
+        int sq = from;
+        while (true) {
+            int to = sq + deltas[d];
+            if (to < 0 || to > 63) break;
+            if (fileDistance(to, sq) > 1) break;
+
+            Piece target = squares[to];
+            if (target != EMPTY) {
+                if (isEnemy(target, sideToMove))
+                    moves.emplace_back(Move(from, (uint8_t)to, (uint8_t)target));
+                break;
+            }
+            moves.emplace_back(Move(from, (uint8_t)to));
+            sq = to;
+        }
+    }
+}
+
+
+void Board::generatePawnMoves(uint8_t from, std::vector<Move>& moves) const {
+    const bool white = (sideToMove == WHITE);
+
+    const int forward = white ? 8 : -8;
+    const int capA    = white ? 7 : -7;   // one diagonal...
+    const int capB    = white ? 9 : -9;   // ...and the other
+    const int capture[2] = { capA, capB };
+
+    const uint8_t promoFirst  = white ? W_KNIGHT : B_KNIGHT;
+    const bool    onPromoRank = white ? (from >= 48 && from <= 55) : (from >= 8  && from <= 15);
+    const bool    onStartRank = white ? (from >= 8  && from <= 15) : (from >= 48 && from <= 55);
+
+    // En passant. The target square is empty, so it needs its own test rather
+    // than falling out of the ordinary capture checks below.
+    if (enPassantSquare != 64) {
+        const uint8_t victim = white ? enPassantSquare - 8 : enPassantSquare + 8;
+        for (int delta : capture) {
+            uint8_t to;
+            if (diagonalStep(from, delta, to) && to == enPassantSquare)
+                moves.emplace_back(Move(from, enPassantSquare, (uint8_t)squares[victim], 0, false, true));
+        }
+    }
+
+    const int push = from + forward;
+
+    if (onPromoRank) {
+        if (push >= 0 && push <= 63 && squares[push] == EMPTY) {
+            for (uint8_t promo = promoFirst; promo < promoFirst + 4; promo++)
+                moves.emplace_back(Move(from, (uint8_t)push, 0, promo));
+        }
+        for (int delta : capture) {
+            uint8_t to;
+            if (diagonalStep(from, delta, to) && isEnemy(squares[to], sideToMove)) {
+                for (uint8_t promo = promoFirst; promo < promoFirst + 4; promo++)
+                    moves.emplace_back(Move(from, to, (uint8_t)squares[to], promo));
+            }
+        }
+        return;
+    }
+
+    if (push >= 0 && push <= 63 && squares[push] == EMPTY) {
+        moves.emplace_back(Move(from, (uint8_t)push));
+        if (onStartRank && squares[from + 2 * forward] == EMPTY)
+            moves.emplace_back(Move(from, (uint8_t)(from + 2 * forward)));
+    }
+    for (int delta : capture) {
+        uint8_t to;
+        if (diagonalStep(from, delta, to) && isEnemy(squares[to], sideToMove))
+            moves.emplace_back(Move(from, to, (uint8_t)squares[to]));
+    }
+}
+
+
+void Board::generateKnightMoves(uint8_t from, std::vector<Move>& moves) const {
+    static const int deltas[8] = { 15, 17, -10, 6, -15, -17, 10, -6 };
+    generateStepMoves(from, deltas, 8, 2, moves);
+}
+
+
+void Board::generateBishopMoves(uint8_t from, std::vector<Move>& moves) const {
+    static const int deltas[4] = { 7, -7, 9, -9 };
+    generateSlidingMoves(from, deltas, 4, moves);
+}
+
+
+void Board::generateRookMoves(uint8_t from, std::vector<Move>& moves) const {
+    static const int deltas[4] = { 8, -8, -1, 1 };
+    generateSlidingMoves(from, deltas, 4, moves);
+}
+
+
+void Board::generateQueenMoves(uint8_t from, std::vector<Move>& moves) const {
+    generateRookMoves(from, moves);
+    generateBishopMoves(from, moves);
+}
+
+
+void Board::generateKingMoves(uint8_t from, std::vector<Move>& moves) const {
+    static const int deltas[8] = { 1, -1, 8, -8, 7, -9, 9, -7 };
+    generateStepMoves(from, deltas, 8, 1, moves);
+
+    const bool    kingside  = (sideToMove == WHITE) ? whiteCanCastleKingside  : blackCanCastleKingside;
+    const bool    queenside = (sideToMove == WHITE) ? whiteCanCastleQueenside : blackCanCastleQueenside;
+    const uint8_t home      = (sideToMove == WHITE) ? 4 : 60;
+
+    if (from != home || isInCheck(sideToMove)) return;
+
+    if (kingside && squares[home + 1] == EMPTY && squares[home + 2] == EMPTY)
+        moves.emplace_back(Move(from, from + 2, 0, 0, true));
+
+    if (queenside && squares[home - 1] == EMPTY && squares[home - 2] == EMPTY && squares[home - 3] == EMPTY)
+        moves.emplace_back(Move(from, from - 2, 0, 0, true));
+}
+
 
 std::vector<Move> Board::generateLegalMoves() {
     std::vector<Move> moves;
-    for (uint8_t i = 0; i < 64; i += 1) {
+    moves.reserve(64);
+
+    for (uint8_t i = 0; i < 64; i++) {
         Piece p = squares[i];
-        if (sideToMove == WHITE) {
-            if (p == W_PAWN) {
+        if (p == EMPTY || colorOf(p) != sideToMove) continue;
 
-                if (enPassantSquare != 64 && i % 8 != 0 && i + 7 == enPassantSquare) {
-                    moves.emplace_back(Move(i, enPassantSquare, (uint8_t)squares[enPassantSquare - 8], 0, false, true));
-                }
-                if (enPassantSquare != 64 && i % 8 != 7 && i + 9 == enPassantSquare) {
-                    moves.emplace_back(Move(i, enPassantSquare, (uint8_t)squares[enPassantSquare - 8], 0, false, true));
-                }
+        switch (p) {
+            case W_PAWN:
+            case B_PAWN:    generatePawnMoves(i, moves);   break;
 
-                //last row
-                if (i >= 48 && i <= 55) {
-                    if (squares[i + 8] == EMPTY) {
-                        for (uint8_t j = 2; j < 6; j += 1){
-                            moves.emplace_back(Move(i, i + 8, 0, j));}
-                    }
-                    if (i % 8 != 0 && squares[i + 7] != EMPTY && squares[i + 7] >= B_PAWN) {
-                        for (uint8_t j = 2; j < 6; j += 1){
-                            moves.emplace_back(Move(i, i + 7, (uint8_t)squares[i + 7], j));
-                        }
-                    }
-                    if (i % 8 != 7 && squares[i + 9] != EMPTY && squares[i + 9] >= B_PAWN) {
-                        for (uint8_t j = 2; j < 6; j += 1) {
-                            moves.emplace_back(Move(i, i + 9, (uint8_t)squares[i + 9], j));
-                        }
-                    }
-                }
-                // all other rows
-                else {
-                    if (squares[i + 8] == EMPTY) {
-                        moves.emplace_back(Move(i, i + 8));
-                        if (i >= 8 && i <= 15 && squares[i + 16] == EMPTY) {
-                            moves.emplace_back(Move(i, i + 16));
-                        }
-                    }
-                    if (i % 8 != 0 && squares[i + 7] != EMPTY && squares[i + 7] >= B_PAWN) {
-                        moves.emplace_back(Move(i, i + 7, (uint8_t)squares[i + 7]));
-                    }
-                    if (i % 8 != 7 && squares[i + 9] != EMPTY && squares[i + 9] >= B_PAWN) {
-                        moves.emplace_back(Move(i, i + 9, (uint8_t)squares[i + 9]));
-                    }
-                }
-            }
+            case W_KNIGHT:
+            case B_KNIGHT:  generateKnightMoves(i, moves); break;
 
-            else if (p == W_KNIGHT) {
-                //forward
-                if (i % 8 != 0 && i + 15 < 64 && (squares[i + 15] == EMPTY || squares[i + 15] >= B_PAWN))   {moves.emplace_back(Move(i, i + 15, (uint8_t)squares[i + 15]));}
-                if (i % 8 != 7 && i + 17 < 64 && (squares[i + 17] == EMPTY || squares[i + 17] >= B_PAWN))   {moves.emplace_back(Move(i, i + 17, (uint8_t)squares[i + 17]));}
+            case W_BISHOP:
+            case B_BISHOP:  generateBishopMoves(i, moves); break;
 
-                //left
-                if (i % 8 >= 2 && i >= 10 && (squares[i - 10] == EMPTY || squares[i - 10] >= B_PAWN))       {moves.emplace_back(Move(i, i - 10, (uint8_t)squares[i - 10]));}
-                if (i % 8 >= 2 && i + 6 < 64 && (squares[i + 6] == EMPTY || squares[i + 6] >= B_PAWN))      {moves.emplace_back(Move(i, i + 6, (uint8_t)squares[i + 6]));}
+            case W_ROOK:
+            case B_ROOK:    generateRookMoves(i, moves);   break;
 
-                //down
-                if (i % 8 != 7 && i >= 15 && (squares[i - 15] == EMPTY || squares[i - 15] >= B_PAWN))       {moves.emplace_back(Move(i, i - 15, (uint8_t)squares[i - 15]));}
-                if (i % 8 != 0 && i >= 17 && (squares[i - 17] == EMPTY || squares[i - 17] >= B_PAWN))       {moves.emplace_back(Move(i, i - 17, (uint8_t)squares[i - 17]));}
+            case W_QUEEN:
+            case B_QUEEN:   generateQueenMoves(i, moves);  break;
 
-                //right
-                if (i % 8 <= 5 && i + 10 < 64 && (squares[i + 10] == EMPTY || squares[i + 10] >= B_PAWN))   {moves.emplace_back(Move(i, i + 10, (uint8_t)squares[i + 10]));}
-                if (i % 8 <= 5 && i >= 6 && (squares[i - 6] == EMPTY || squares[i - 6] >= B_PAWN))          {moves.emplace_back(Move(i, i - 6, (uint8_t)squares[i - 6]));}
+            case W_KING:
+            case B_KING:    generateKingMoves(i, moves);   break;
 
-            }
-
-            else if (p == W_BISHOP) {
-                uint8_t n = i;
-
-                //left up
-                while (n + 7 < 64 && n % 8 != 0 && squares[n + 7] == EMPTY) {
-                    moves.emplace_back(Move(i, n + 7));
-                    n += 7;
-                }
-                if (n + 7 < 64 && n % 8 != 0 && squares[n + 7] >= B_PAWN)       {moves.emplace_back(Move(i, n + 7, (uint8_t)squares[n + 7]));}
-                n = i;
-
-                // right down
-                while (n >= 7 && n % 8 != 7 && squares[n - 7] == EMPTY) {
-                    moves.emplace_back(Move(i, n - 7));
-                    n -= 7;
-                }
-                if (n >= 7 && n % 8 != 7 && squares[n - 7] >= B_PAWN)            {moves.emplace_back(Move(i, n - 7, (uint8_t)squares[n - 7]));}
-                n = i;
-
-                //right up
-                while (n + 9 < 64 && n % 8 != 7 && squares[n + 9] == EMPTY) {
-                    moves.emplace_back(Move(i, n + 9));
-                    n += 9;
-                }
-                if (n + 9 < 64 && n % 8 != 7 && squares[n + 9] >= B_PAWN)       {moves.emplace_back(Move(i, n + 9, (uint8_t)squares[n + 9]));}
-                n = i;
-
-                //left down
-                while (n >= 9 && n % 8 != 0 && squares[n - 9] == EMPTY) {
-                    moves.emplace_back(Move(i, n - 9));
-                    n -= 9;
-                }
-                if (n >= 9 && n % 8 != 0 && squares[n - 9] >= B_PAWN)            {moves.emplace_back(Move(i, n - 9, (uint8_t)squares[n - 9]));}
-            }
-
-            else if (p == W_ROOK) {
-                uint8_t n = i;
-
-                // up
-                while (n + 8 < 64 && squares[n + 8] == EMPTY) {
-                    moves.emplace_back(Move(i, n + 8));
-                    n = n + 8;
-                }
-                if (n + 8 < 64 && squares[n + 8] >= B_PAWN) {
-                    moves.emplace_back(Move(i, n + 8, (uint8_t)squares[n + 8]));
-                }
-                n = i;
-
-                //down
-                while (n >= 8 && squares[n - 8] == EMPTY) {
-                    moves.emplace_back(Move(i, n - 8));
-                    n = n - 8;
-                }
-                if (n >= 8 && squares[n - 8] >= B_PAWN) {
-                    moves.emplace_back(Move(i, n - 8, (uint8_t)squares[n - 8]));
-                }
-                n = i;
-
-                //left
-                while (n % 8 != 0 && squares[n - 1] == EMPTY) {
-                    moves.emplace_back(Move(i, n - 1));
-                    n = n - 1;
-                }
-                if (n % 8 != 0 && squares[n - 1] >= B_PAWN) {
-                    moves.emplace_back(Move(i, n - 1, (uint8_t)squares[n - 1]));
-                }
-                n = i;
-
-                //right
-                while (n % 8 != 7 && squares[n + 1] == EMPTY) {
-                    moves.emplace_back(Move(i, n + 1));
-                    n = n + 1;
-                }
-                if (n % 8 != 7 && squares[n + 1] >= B_PAWN) {
-                    moves.emplace_back(Move(i, n + 1, (uint8_t)squares[n + 1]));
-                }
-            }
-
-            else if (p == W_QUEEN) {
-                uint8_t n = i;
-
-                // up
-                while (n + 8 < 64 && squares[n + 8] == EMPTY) {
-                    moves.emplace_back(Move(i, n + 8));
-                    n = n + 8;
-                }
-                if (n + 8 < 64 && squares[n + 8] >= B_PAWN) {
-                    moves.emplace_back(Move(i, n + 8, (uint8_t)squares[n + 8]));
-                }
-                n = i;
-
-                //down
-                while (n >= 8 && squares[n - 8] == EMPTY) {
-                    moves.emplace_back(Move(i, n - 8));
-                    n = n - 8;
-                }
-                if (n >= 8 && squares[n - 8] >= B_PAWN) {
-                    moves.emplace_back(Move(i, n - 8, (uint8_t)squares[n - 8]));
-                }
-                n = i;
-
-                //left
-                while (n % 8 != 0 && squares[n - 1] == EMPTY) {
-                    moves.emplace_back(Move(i, n - 1));
-                    n = n - 1;
-                }
-                if (n % 8 != 0 && squares[n - 1] >= B_PAWN) {
-                    moves.emplace_back(Move(i, n - 1, (uint8_t)squares[n - 1]));
-                }
-                n = i;
-
-                //right
-                while (n % 8 != 7 && squares[n + 1] == EMPTY) {
-                    moves.emplace_back(Move(i, n + 1));
-                    n = n + 1;
-                }
-                if (n % 8 != 7 && squares[n + 1] >= B_PAWN) {
-                    moves.emplace_back(Move(i, n + 1, (uint8_t)squares[n + 1]));
-                }
-                n = i;
-
-                //left up
-                while (n + 7 < 64 && n % 8 != 0 && squares[n + 7] == EMPTY) {
-                    moves.emplace_back(Move(i, n + 7));
-                    n += 7;
-                }
-                if (n + 7 < 64 && n % 8 != 0 && squares[n + 7] >= B_PAWN)     {moves.emplace_back(Move(i, n + 7, (uint8_t)squares[n + 7]));}
-                n = i;
-
-                // right down
-                while (n >= 7 && n % 8 != 7 && squares[n - 7] == EMPTY) {
-                    moves.emplace_back(Move(i, n - 7));
-                    n -= 7;
-                }
-                if (n >= 7 && n % 8 != 7 && squares[n - 7] >= B_PAWN)         {moves.emplace_back(Move(i, n - 7, (uint8_t)squares[n - 7]));}
-                n = i;
-
-                //right up
-                while (n + 9 < 64 && n % 8 != 7 && squares[n + 9] == EMPTY) {
-                    moves.emplace_back(Move(i, n + 9));
-                    n += 9;
-                }
-                if (n + 9 < 64 && n % 8 != 7 && squares[n + 9] >= B_PAWN)     {moves.emplace_back(Move(i, n + 9, (uint8_t)squares[n + 9]));}
-                n = i;
-
-                //left down
-                while (n >= 9 && n % 8 != 0 && squares[n - 9] == EMPTY) {
-                    moves.emplace_back(Move(i, n - 9));
-                    n -= 9;
-                }
-                if (n >= 9 && n % 8 != 0 && squares[n - 9] >= B_PAWN)         {moves.emplace_back(Move(i, n - 9, (uint8_t)squares[n - 9]));}
-            }
-
-            else if (p == W_KING) {
-                //+ moves
-                if (i % 8 != 7 && (squares[i + 1] == EMPTY || squares[i + 1] >= B_PAWN))    {moves.emplace_back(Move(i, i + 1, squares[i + 1]));}
-                if (i % 8 != 0 && (squares[i - 1] == EMPTY || squares[i - 1] >= B_PAWN))    {moves.emplace_back(Move(i, i - 1, squares[i - 1]));}
-                if (i + 8 < 64 && (squares[i + 8] == EMPTY || squares[i + 8] >= B_PAWN))    {moves.emplace_back(Move(i, i + 8, squares[i + 8]));}
-                if (i >= 8     && (squares[i - 8] == EMPTY || squares[i - 8] >= B_PAWN))    {moves.emplace_back(Move(i, i - 8, squares[i - 8]));}
-
-                //diagonal
-                if (i % 8 != 7) {
-                if (i <= 55 && (squares[i + 7] == EMPTY || squares[i + 7] >= B_PAWN))       {moves.emplace_back(Move(i, i + 7, squares[i + 7]));}
-                if (i >= 8 && (squares[i - 9] == EMPTY || squares[i - 9] >= B_PAWN))        {moves.emplace_back(Move(i, i - 9, squares[i - 9]));}}
-                if (i % 8 != 0) {
-                if (i <= 55 && (squares[i + 9] == EMPTY || squares[i + 9] >= B_PAWN))       {moves.emplace_back(Move(i, i + 9, squares[i + 9]));}
-                if (i >= 8 && (squares[i - 7] == EMPTY || squares[i - 7] >= B_PAWN))        {moves.emplace_back(Move(i, i - 7, squares[i - 7]));}}
-
-                //Castle
-                if (!isInCheck(WHITE)) {
-                    if (whiteCanCastleKingside && squares[5] == EMPTY && squares[6] == EMPTY) {
-                        moves.emplace_back(Move(i, i + 2, 0, 0, true));
-                    }
-                    if (whiteCanCastleQueenside && squares[3] == EMPTY && squares[2] == EMPTY && squares[1] == EMPTY) {
-                        moves.emplace_back(Move(i, i - 2, 0, 0, true));
-                    }
-                }
-            }
+            case EMPTY:     break;
         }
-
-
-        else {
-            if (p == B_PAWN) {
-
-                if (enPassantSquare != 64 && i % 8 != 7 && i - 7 == enPassantSquare) {
-                    moves.emplace_back(Move(i, enPassantSquare, (uint8_t)squares[enPassantSquare + 8], 0, false, true));
-                }
-                if (enPassantSquare != 64 && i % 8 != 0 && i - 9 == enPassantSquare) {
-                    moves.emplace_back(Move(i, enPassantSquare, (uint8_t)squares[enPassantSquare + 8], 0, false, true));
-                }
-
-                // last row (promotion)
-                if (i >= 8 && i <= 15) {
-                    if (squares[i - 8] == EMPTY) {
-                        for (uint8_t j = 8; j < 12; j += 1) {
-                            moves.emplace_back(Move(i, i - 8, 0, j));
-                        }
-                    }
-                    if (i % 8 != 7 && squares[i - 7] != EMPTY && squares[i - 7] < B_PAWN) {
-                        for (uint8_t j = 8; j < 12; j += 1) {
-                            moves.emplace_back(Move(i, i - 7, (uint8_t)squares[i - 7], j));
-                        }
-                    }
-                    if (i % 8 != 0 && squares[i - 9] != EMPTY && squares[i - 9] < B_PAWN) {
-                        for (uint8_t j = 8; j < 12; j += 1) {
-                            moves.emplace_back(Move(i, i - 9, (uint8_t)squares[i - 9], j));
-                        }
-                    }
-                }
-                // all other rows
-                else {
-                    if (squares[i - 8] == EMPTY) {
-                        moves.emplace_back(Move(i, i - 8));
-                        if (i >= 48 && i <= 55 && squares[i - 16] == EMPTY) {
-                            moves.emplace_back(Move(i, i - 16));
-                        }
-                    }
-                    if (i % 8 != 7 && squares[i - 7] != EMPTY && squares[i - 7] < B_PAWN) {
-                        moves.emplace_back(Move(i, i - 7, (uint8_t)squares[i - 7]));
-                    }
-                    if (i % 8 != 0 && squares[i - 9] != EMPTY && squares[i - 9] < B_PAWN) {
-                        moves.emplace_back(Move(i, i - 9, (uint8_t)squares[i - 9]));
-                    }
-                }
-            }
-
-            else if (p == B_KNIGHT) {
-                //forward
-                if (i % 8 != 0 && i + 15 < 64 && (squares[i + 15] == EMPTY || squares[i + 15] < B_PAWN))   {moves.emplace_back(Move(i, i + 15, (uint8_t)squares[i + 15]));}
-                if (i % 8 != 7 && i + 17 < 64 && (squares[i + 17] == EMPTY || squares[i + 17] < B_PAWN))   {moves.emplace_back(Move(i, i + 17, (uint8_t)squares[i + 17]));}
-
-                //left
-                if (i % 8 >= 2 && i >= 10 && (squares[i - 10] == EMPTY || squares[i - 10] < B_PAWN))       {moves.emplace_back(Move(i, i - 10, (uint8_t)squares[i - 10]));}
-                if (i % 8 >= 2 && i + 6 < 64 && (squares[i + 6] == EMPTY || squares[i + 6] < B_PAWN))      {moves.emplace_back(Move(i, i + 6, (uint8_t)squares[i + 6]));}
-
-                //down
-                if (i % 8 != 7 && i >= 15 && (squares[i - 15] == EMPTY || squares[i - 15] < B_PAWN))       {moves.emplace_back(Move(i, i - 15, (uint8_t)squares[i - 15]));}
-                if (i % 8 != 0 && i >= 17 && (squares[i - 17] == EMPTY || squares[i - 17] < B_PAWN))       {moves.emplace_back(Move(i, i - 17, (uint8_t)squares[i - 17]));}
-
-                //right
-                if (i % 8 <= 5 && i + 10 < 64 && (squares[i + 10] == EMPTY || squares[i + 10] < B_PAWN))   {moves.emplace_back(Move(i, i + 10, (uint8_t)squares[i + 10]));}
-                if (i % 8 <= 5 && i >= 6 && (squares[i - 6] == EMPTY || squares[i - 6] < B_PAWN))          {moves.emplace_back(Move(i, i - 6, (uint8_t)squares[i - 6]));}
-            }
-
-            else if (p == B_BISHOP) {
-                uint8_t n = i;
-
-                //left up
-                while (n + 7 < 64 && n % 8 != 0 && squares[n + 7] == EMPTY) {
-                    moves.emplace_back(Move(i, n + 7));
-                    n += 7;
-                }
-                if (n + 7 < 64 && n % 8 != 0 && squares[n + 7] != EMPTY && squares[n + 7] < B_PAWN)   {moves.emplace_back(Move(i, n + 7, (uint8_t)squares[n + 7]));}
-                n = i;
-
-                // right down
-                while (n >= 7 && n % 8 != 7 && squares[n - 7] == EMPTY) {
-                    moves.emplace_back(Move(i, n - 7));
-                    n -= 7;
-                }
-                if (n >= 7 && n % 8 != 7 && squares[n - 7] != EMPTY && squares[n - 7] < B_PAWN)       {moves.emplace_back(Move(i, n - 7, (uint8_t)squares[n - 7]));}
-                n = i;
-
-                //right up
-                while (n + 9 < 64 && n % 8 != 7 && squares[n + 9] == EMPTY) {
-                    moves.emplace_back(Move(i, n + 9));
-                    n += 9;
-                }
-                if (n + 9 < 64 && n % 8 != 7 && squares[n + 9] != EMPTY && squares[n + 9] < B_PAWN)   {moves.emplace_back(Move(i, n + 9, (uint8_t)squares[n + 9]));}
-                n = i;
-
-                //left down
-                while (n >= 9 && n % 8 != 0 && squares[n - 9] == EMPTY) {
-                    moves.emplace_back(Move(i, n - 9));
-                    n -= 9;
-                }
-                if (n >= 9 && n % 8 != 0 && squares[n - 9] != EMPTY && squares[n - 9] < B_PAWN)       {moves.emplace_back(Move(i, n - 9, (uint8_t)squares[n - 9]));}
-            }
-
-            else if (p == B_ROOK) {
-                uint8_t n = i;
-
-                // up
-                while (n + 8 < 64 && squares[n + 8] == EMPTY) {
-                    moves.emplace_back(Move(i, n + 8));
-                    n = n + 8;
-                }
-                if (n + 8 < 64 && squares[n + 8] < B_PAWN && squares[n + 8] != EMPTY) {
-                    moves.emplace_back(Move(i, n + 8, (uint8_t)squares[n + 8]));
-                }
-                n = i;
-
-                // down
-                while (n >= 8 && squares[n - 8] == EMPTY) {
-                    moves.emplace_back(Move(i, n - 8));
-                    n = n - 8;
-                }
-                if (n >= 8 && squares[n - 8] < B_PAWN && squares[n - 8] != EMPTY) {
-                    moves.emplace_back(Move(i, n - 8, (uint8_t)squares[n - 8]));
-                }
-                n = i;
-
-                // left
-                while (n % 8 != 0 && squares[n - 1] == EMPTY) {
-                    moves.emplace_back(Move(i, n - 1));
-                    n = n - 1;
-                }
-                if (n % 8 != 0 && squares[n - 1] < B_PAWN && squares[n - 1] != EMPTY) {
-                    moves.emplace_back(Move(i, n - 1, (uint8_t)squares[n - 1]));
-                }
-                n = i;
-
-                // right
-                while (n % 8 != 7 && squares[n + 1] == EMPTY) {
-                    moves.emplace_back(Move(i, n + 1));
-                    n = n + 1;
-                }
-                if (n % 8 != 7 && squares[n + 1] < B_PAWN && squares[n + 1] != EMPTY) {
-                    moves.emplace_back(Move(i, n + 1, (uint8_t)squares[n + 1]));
-                }
-            }
-
-            else if (p == B_QUEEN) {
-                uint8_t n = i;
-
-                // up
-                while (n + 8 < 64 && squares[n + 8] == EMPTY) {
-                    moves.emplace_back(Move(i, n + 8));
-                    n = n + 8;
-                }
-                if (n + 8 < 64 && squares[n + 8] != EMPTY && squares[n + 8] < B_PAWN) {
-                    moves.emplace_back(Move(i, n + 8, (uint8_t)squares[n + 8]));
-                }
-                n = i;
-
-                //down
-                while (n >= 8 && squares[n - 8] == EMPTY) {
-                    moves.emplace_back(Move(i, n - 8));
-                    n = n - 8;
-                }
-                if (n >= 8 && squares[n - 8] != EMPTY && squares[n - 8] < B_PAWN) {
-                    moves.emplace_back(Move(i, n - 8, (uint8_t)squares[n - 8]));
-                }
-                n = i;
-
-                //left
-                while (n % 8 != 0 && squares[n - 1] == EMPTY) {
-                    moves.emplace_back(Move(i, n - 1));
-                    n = n - 1;
-                }
-                if (n % 8 != 0 && squares[n - 1] != EMPTY && squares[n - 1] < B_PAWN) {
-                    moves.emplace_back(Move(i, n - 1, (uint8_t)squares[n - 1]));
-                }
-                n = i;
-
-                //right
-                while (n % 8 != 7 && squares[n + 1] == EMPTY) {
-                    moves.emplace_back(Move(i, n + 1));
-                    n = n + 1;
-                }
-                if (n % 8 != 7 && squares[n + 1] != EMPTY && squares[n + 1] < B_PAWN) {
-                    moves.emplace_back(Move(i, n + 1, (uint8_t)squares[n + 1]));
-                }
-                n = i;
-
-                //left up
-                while (n + 7 < 64 && n % 8 != 0 && squares[n + 7] == EMPTY) {
-                    moves.emplace_back(Move(i, n + 7));
-                    n += 7;
-                }
-                if (n + 7 < 64 && n % 8 != 0 && squares[n + 7] != EMPTY && squares[n + 7] < B_PAWN)   {moves.emplace_back(Move(i, n + 7, (uint8_t)squares[n + 7]));}
-                n = i;
-
-                // right down
-                while (n >= 7 && n % 8 != 7 && squares[n - 7] == EMPTY) {
-                    moves.emplace_back(Move(i, n - 7));
-                    n -= 7;
-                }
-                if (n >= 7 && n % 8 != 7 && squares[n - 7] != EMPTY && squares[n - 7] < B_PAWN)       {moves.emplace_back(Move(i, n - 7, (uint8_t)squares[n - 7]));}
-                n = i;
-
-                //right up
-                while (n + 9 < 64 && n % 8 != 7 && squares[n + 9] == EMPTY) {
-                    moves.emplace_back(Move(i, n + 9));
-                    n += 9;
-                }
-                if (n + 9 < 64 && n % 8 != 7 && squares[n + 9] != EMPTY && squares[n + 9] < B_PAWN)   {moves.emplace_back(Move(i, n + 9, (uint8_t)squares[n + 9]));}
-                n = i;
-
-                //left down
-                while (n >= 9 && n % 8 != 0 && squares[n - 9] == EMPTY) {
-                    moves.emplace_back(Move(i, n - 9));
-                    n -= 9;
-                }
-                if (n >= 9 && n % 8 != 0 && squares[n - 9] != EMPTY && squares[n - 9] < B_PAWN)       {moves.emplace_back(Move(i, n - 9, (uint8_t)squares[n - 9]));}
-            }
-
-            else if (p == B_KING) {
-                //+ moves
-                if (i % 8 != 7 && (squares[i + 1] == EMPTY || squares[i + 1] < B_PAWN))    {moves.emplace_back(Move(i, i + 1, squares[i + 1]));}
-                if (i % 8 != 0 && (squares[i - 1] == EMPTY || squares[i - 1] < B_PAWN))    {moves.emplace_back(Move(i, i - 1, squares[i - 1]));}
-                if (i + 8 < 64 && (squares[i + 8] == EMPTY || squares[i + 8] < B_PAWN))    {moves.emplace_back(Move(i, i + 8, squares[i + 8]));}
-                if (i >= 8     && (squares[i - 8] == EMPTY || squares[i - 8] < B_PAWN))    {moves.emplace_back(Move(i, i - 8, squares[i - 8]));}
-
-                //diagonal
-                if (i % 8 != 7) {
-                if (i <= 55 && (squares[i + 7] == EMPTY || squares[i + 7] < B_PAWN))       {moves.emplace_back(Move(i, i + 7, squares[i + 7]));}
-                if (i >= 8  && (squares[i - 9] == EMPTY || squares[i - 9] < B_PAWN))       {moves.emplace_back(Move(i, i - 9, squares[i - 9]));}}
-
-                if (i % 8 != 0) {
-                if (i <= 55 && (squares[i + 9] == EMPTY || squares[i + 9] < B_PAWN))       {moves.emplace_back(Move(i, i + 9, squares[i + 9]));}
-                if (i >= 8  && (squares[i - 7] == EMPTY || squares[i - 7] < B_PAWN))       {moves.emplace_back(Move(i, i - 7, squares[i - 7]));}}
-
-                //Castle
-                if (!isInCheck(BLACK)) {
-                    if (blackCanCastleKingside && squares[61] == EMPTY && squares[62] == EMPTY) {
-                        moves.emplace_back(Move(i, i + 2, 0, 0, true));
-                    }
-                    if (blackCanCastleQueenside && squares[59] == EMPTY && squares[58] == EMPTY && squares[57] == EMPTY) {
-                        moves.emplace_back(Move(i, i - 2, 0, 0, true));
-                    }
-                }
-            }
-        }
-
     }
 
     std::vector<Move> legal;
+    legal.reserve(moves.size());
     Color mover = sideToMove;
     for (Move& m : moves) {
         UndoInfo undo(0, 0);

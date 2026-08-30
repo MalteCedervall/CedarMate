@@ -56,6 +56,24 @@ class Board {
         uint8_t getBlackKingSquare() const { return blackKingSquare; }
 
     private:
+        // Pseudo-legal generators for the piece standing on `from`, which is
+        // assumed to belong to the side to move. Each appends to `moves`;
+        // generateLegalMoves() filters out moves that leave the king in check.
+        void generatePawnMoves(uint8_t from, std::vector<Move>& moves) const;
+        void generateKnightMoves(uint8_t from, std::vector<Move>& moves) const;
+        void generateBishopMoves(uint8_t from, std::vector<Move>& moves) const;
+        void generateRookMoves(uint8_t from, std::vector<Move>& moves) const;
+        void generateQueenMoves(uint8_t from, std::vector<Move>& moves) const;
+        void generateKingMoves(uint8_t from, std::vector<Move>& moves) const;
+
+        // Shared building blocks: `deltas` are square offsets, `maxFileShift`
+        // is how far a single step may move sideways before it has wrapped
+        // around a board edge.
+        void generateStepMoves(uint8_t from, const int* deltas, int count,
+                               int maxFileShift, std::vector<Move>& moves) const;
+        void generateSlidingMoves(uint8_t from, const int* deltas, int count,
+                                  std::vector<Move>& moves) const;
+
         Piece squares[64];
         Color sideToMove;
         bool whiteCanCastleKingside;
