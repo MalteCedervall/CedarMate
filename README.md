@@ -6,7 +6,6 @@ A chess engine written from scratch in C++20, playable from the terminal.
 
 ```sh
 make          # builds ./program
-make test     # builds and runs the test suite
 make clean
 ```
 
@@ -43,7 +42,6 @@ thinks Black is a little better than three quarters of a pawn ahead.
 | `Eval.h` / `Eval.cpp`   | static evaluation — material plus piece-square tables   |
 | `Search.h` / `Search.cpp` | negamax search with alpha-beta pruning                |
 | `main.cpp`              | terminal game loop                                      |
-| `test_moves.cpp`        | tests for make/undo and move generation                 |
 
 ## How it works
 
@@ -70,7 +68,6 @@ the queen is just the rook's offsets plus the bishop's.
 - Castling checks that the squares between king and rook are empty and that the
   king is not currently in check, but not that it passes *through* an attacked
   square, nor that the rook is still on its home square.
-- `undoMove` does not fully restore state after a black promotion
-  (`test_moves.cpp` Test 10 fails on this).
+- `undoMove` does not fully restore state after a black promotion.
 - You cannot pick a promotion piece from the terminal — the first generated
   promotion wins, which is a knight.
